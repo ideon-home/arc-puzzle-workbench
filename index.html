@@ -1,0 +1,896 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Arc Puzzle Workbench</title>
+  <style>
+    :root {
+      --cell: 60px;
+      --green: #b5e3b5;
+      --line: #1a1a1a;
+      --bg: #fafafa;
+      --panel-bg: white;
+      --good: #2d9d3a;
+      --bad: #d23838;
+      --pending: #d9a300;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      margin: 24px;
+      background: var(--bg);
+      color: #1a1a1a;
+    }
+    h1 { margin: 0 0 16px; font-size: 22px; }
+    h2 { margin: 0 0 12px; font-size: 16px; }
+    h3 { margin: 16px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: #666; }
+    #layout {
+      display: grid;
+      grid-template-columns: 560px 1fr;
+      gap: 24px;
+      align-items: start;
+      max-width: 1200px;
+    }
+    #grid-container {
+      background: white;
+      border-radius: 6px;
+      padding: 10px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+    }
+    #grid {
+      display: block;
+      cursor: pointer;
+      user-select: none;
+    }
+    #grid.over-green { cursor: not-allowed; }
+    #panel {
+      background: var(--panel-bg);
+      border-radius: 6px;
+      padding: 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+    .controls { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    button {
+      font: 500 13px system-ui;
+      padding: 6px 12px;
+      border: 1px solid #ccc;
+      background: white;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    button:hover { background: #f0f0f0; }
+
+    /* Grid cell visuals */
+    .cell-bg.green { fill: var(--green); }
+    .cell-bg.white { fill: white; }
+    .gridline { stroke: var(--line); stroke-width: 1; }
+    .clue {
+      font: 600 22px system-ui, sans-serif;
+      fill: #1a1a1a;
+      text-anchor: middle;
+      dominant-baseline: central;
+      pointer-events: none;
+    }
+    .arc { stroke: black; stroke-width: 2.5; fill: none; pointer-events: none; }
+    .arc.dangling { stroke: var(--bad); animation: dangle-pulse 1.2s infinite ease-in-out; }
+    @keyframes dangle-pulse {
+      0%, 100% { opacity: 1; stroke-width: 2.5; }
+      50%      { opacity: 0.4; stroke-width: 4; }
+    }
+    .corner-target {
+      fill: rgba(50, 100, 200, 0.5);
+      stroke: white;
+      stroke-width: 1;
+      pointer-events: none;
+    }
+    .clue-border-overlay {
+      fill: none;
+      stroke-width: 3;
+      pointer-events: none;
+    }
+    .clue-border-overlay.match { stroke: var(--good); }
+    .clue-border-overlay.mismatch { stroke: var(--bad); }
+    .clue-border-overlay.pending { stroke: var(--pending); stroke-dasharray: 4 3; }
+
+    /* Region info */
+    .region-row {
+      display: grid;
+      grid-template-columns: 18px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 4px 6px;
+      border-radius: 3px;
+      font-size: 13px;
+    }
+    .region-row + .region-row { margin-top: 2px; }
+    .region-row .swatch {
+      width: 14px; height: 14px; border-radius: 3px; border: 1px solid #999;
+    }
+    .region-row .meta { color: #666; font-size: 11px; }
+    .region-row.bad { background: #fff0f0; }
+    .region-row.pending { background: #fffaf0; }
+
+    /* Cell labels mini-grid */
+    #cell-labels {
+      display: grid;
+      /* grid-template-columns set in JS from PUZZLE.size (N cells + 1 row-sum column) */
+      gap: 1px;
+      font: 600 12px ui-monospace, "SF Mono", Menlo, monospace;
+      margin-top: 8px;
+    }
+    #cell-labels .lc {
+      background: #f5f5f5;
+      padding: 5px 0;
+      text-align: center;
+      min-height: 26px;
+    }
+    #cell-labels .lc.green { background: var(--green); }
+    #cell-labels .lc.sum { background: #e8f0ff; font-weight: 700; }
+    #cell-labels .lc.empty { background: white; }
+
+    .answer {
+      font: 700 18px system-ui;
+      padding: 10px;
+      background: #f0f7ff;
+      border-radius: 4px;
+      margin-top: 12px;
+      text-align: center;
+    }
+    .answer.unsolved { color: #999; background: #f5f5f5; font-weight: 500; font-size: 14px; }
+
+    /* Reachability overlay */
+    .reach-cell {
+      fill: #fff7d6;
+      pointer-events: none;
+      opacity: 0.55;
+    }
+    .reach-clue {
+      fill: none;
+      stroke: #d28800;
+      stroke-width: 4;
+      pointer-events: none;
+    }
+
+    /* Clue factorization hints */
+    #clue-hints {
+      font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+      background: #faf5ff;
+      border-radius: 4px;
+      padding: 8px 10px;
+      margin-top: 4px;
+    }
+    #clue-hints .clue-row {
+      padding: 2px 0;
+      display: grid;
+      grid-template-columns: 60px 1fr;
+      gap: 8px;
+      align-items: baseline;
+    }
+    #clue-hints .clue-row strong { color: #1a1a1a; }
+    #clue-hints .factor-list { color: #555; }
+    #clue-hints .factor-list .practical { color: #2d9d3a; font-weight: 700; cursor: pointer; padding: 1px 4px; border-radius: 3px; }
+    #clue-hints .factor-list .practical:hover { background: #fff7d6; }
+    #clue-hints .factor-list .practical.active { background: #ffe49a; }
+    #clue-hints .factor-list .impractical { color: #999; text-decoration: line-through; }
+
+    .help {
+      font-size: 12px; color: #555; line-height: 1.6;
+      background: #fffae6; padding: 10px 12px;
+      border-radius: 4px; border-left: 3px solid #f5d04a;
+      margin-bottom: 12px;
+    }
+    .help code {
+      font: 600 11px ui-monospace, monospace;
+      background: rgba(0,0,0,0.05); padding: 1px 5px; border-radius: 3px;
+    }
+
+    /* Debug overlay */
+    .debug-seg {
+      fill: none; stroke: #2a5cff; stroke-width: 4; opacity: 0.85;
+      pointer-events: none;
+    }
+    .debug-seg.kink-end {
+      stroke: #ff7b00;
+    }
+    .debug-kink {
+      fill: #d23838; stroke: white; stroke-width: 1.2; pointer-events: none;
+    }
+    .debug-smooth {
+      fill: #2d9d3a; stroke: white; stroke-width: 1.2; pointer-events: none;
+    }
+    #debug-info {
+      font: 12px ui-monospace, "SF Mono", Menlo, monospace;
+      max-height: 240px; overflow-y: auto;
+      background: #f5f8ff;
+      border-radius: 4px;
+      padding: 8px 10px;
+      margin-top: 8px;
+      display: none;
+    }
+    #debug-info.visible { display: block; }
+    #debug-info .summary { font-weight: 700; margin-bottom: 6px; color: #1a1a1a; }
+    #debug-info .row { padding: 1px 0; }
+    #debug-info .row.kink { color: #d23838; }
+    #debug-info .row.smooth { color: #2d9d3a; }
+    .debug-toggle {
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+  </style>
+</head>
+<body>
+  <h1 id="page-title">Arc Puzzle Workbench</h1>
+  <div id="layout">
+    <div id="grid-container">
+      <svg id="grid"></svg>
+    </div>
+    <aside id="panel">
+      <div class="help">
+        <strong>How to play.</strong>
+        Click a white cell to cycle through arc orientations
+        (<code>tl → tr → br → bl → none</code>).
+        Right-click to clear an arc immediately.
+        Green cells reject all clicks.
+        <br>
+        Clue borders: <span style="color:var(--good)">green</span> = score matches,
+        <span style="color:var(--bad)">red</span> = mismatch,
+        <span style="color:var(--pending)">yellow dashed</span> = region area not yet integer.
+        Dangling arcs pulse red.
+      </div>
+      <div class="controls">
+        <button id="btn-clear">Clear all arcs</button>
+        <button id="btn-save">Save</button>
+        <button id="btn-copy">Copy arcs</button>
+        <label class="debug-toggle">
+          <input type="checkbox" id="btn-debug">
+          <span>Boundary debug</span>
+        </label>
+      </div>
+      <div id="debug-info"></div>
+      <h3>Clue factorizations</h3>
+      <div id="clue-hints"></div>
+      <h3>Regions</h3>
+      <div id="regions"></div>
+      <h3>Cell labels &amp; sums</h3>
+      <div id="cell-labels"></div>
+      <div id="answer" class="answer unsolved">Answer pending…</div>
+    </aside>
+  </div>
+
+  <script type="module">
+    import {
+      computeRegions,
+      regionArea,
+      isIntegerArea,
+      regionIntegerArea,
+      regionScore,
+      smoothPieceCount,
+      regionBoundaryWalk,
+      danglingArcs,
+      validateClues,
+      ownerCellRegion,
+    } from './engine.js';
+    import { PUZZLE } from './puzzle.js';
+
+    const SVG_NS = 'http://www.w3.org/2000/svg';
+    const CELL = 60;
+    const N = PUZZLE.size;
+    const GRID_PX = N * CELL;
+
+    // Wire the title (PUZZLE.title) into both the document title and the on-page heading.
+    if (PUZZLE.title) {
+      document.title = PUZZLE.title;
+      document.getElementById('page-title').textContent = PUZZLE.title;
+    }
+
+    // Size the SVG and the cell-labels grid from PUZZLE.size.
+    const svgEl = document.getElementById('grid');
+    svgEl.setAttribute('viewBox', `0 0 ${GRID_PX} ${GRID_PX}`);
+    svgEl.setAttribute('width', GRID_PX);
+    svgEl.setAttribute('height', GRID_PX);
+    document.getElementById('cell-labels').style.gridTemplateColumns = `repeat(${N + 1}, 1fr)`;
+    const PALETTE = [
+      '#ffd6e7','#d6f0ff','#e8ffd6','#fff5d6','#e0d6ff','#d6fff0',
+      '#ffe4d6','#d6e0ff','#f0ffd6','#ffd6f0','#d6fff5','#fff0d6',
+      '#ffe0eb','#d6ebff','#ebffd6','#ffe0d6','#e0ffd6','#d6e0ff',
+      '#f5d6ff','#d6fff8','#fff0e0','#e0d6ff','#fad6e0','#d6ffe0',
+    ];
+
+    function el(tag, attrs = {}, parent) {
+      const e = document.createElementNS(SVG_NS, tag);
+      for (const [k, v] of Object.entries(attrs)) {
+        if (v !== null && v !== undefined) e.setAttribute(k, v);
+      }
+      if (parent) parent.appendChild(e);
+      return e;
+    }
+    const isGreen = (r, c) => PUZZLE.green.some(([gr, gc]) => gr === r && gc === c);
+    const clueAt = (r, c) => PUZZLE.clues.find(cl => cl.r === r && cl.c === c);
+
+    // ---------- State ----------
+    const arcs = new Map(); // "r,c" → "tl" | "tr" | "bl" | "br"
+    const arcKey = (r, c) => `${r},${c}`;
+
+    // ---------- Persistence (localStorage) ----------
+    const STORAGE_KEY = 'jane-street-may-2026-arcs';
+    function saveArcs() {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(Array.from(arcs.entries())));
+      } catch {}
+    }
+    function loadArcs() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const entries = JSON.parse(raw);
+        if (Array.isArray(entries)) {
+          for (const [k, v] of entries) arcs.set(k, v);
+        }
+      } catch {}
+    }
+
+    // ---------- SVG layers ----------
+    const svg = document.getElementById('grid');
+    const layer = {};
+    for (const name of ['bg', 'regionFill', 'reach', 'gridlines', 'arcs', 'debug', 'corners', 'clueBorders', 'clues', 'cluesGreenBg']) {
+      layer[name] = el('g', { class: `layer-${name}` }, svg);
+    }
+    let debugMode = false;
+    let lastData = null;
+    let hoveredCell = null;
+    let pinnedCell = null;
+    let reachHint = null; // { clue: {r, c, value}, area, smooth }
+
+    // ---------- Static render ----------
+    function renderStatic() {
+      // Cell backgrounds
+      for (let r = 0; r < N; r++) {
+        for (let c = 0; c < N; c++) {
+          el('rect', {
+            class: `cell-bg ${isGreen(r, c) ? 'green' : 'white'}`,
+            x: c * CELL, y: r * CELL, width: CELL, height: CELL,
+          }, layer.bg);
+        }
+      }
+      // Gridlines
+      for (let i = 0; i <= N; i++) {
+        el('line', { class: 'gridline', x1: 0, y1: i * CELL, x2: N * CELL, y2: i * CELL }, layer.gridlines);
+        el('line', { class: 'gridline', x1: i * CELL, y1: 0, x2: i * CELL, y2: N * CELL }, layer.gridlines);
+      }
+      // Outer border thicker
+      el('rect', { x: 0, y: 0, width: N * CELL, height: N * CELL,
+        fill: 'none', stroke: 'var(--line)', 'stroke-width': 3 }, layer.gridlines);
+      // Clues
+      for (const { r, c, value } of PUZZLE.clues) {
+        el('text', {
+          class: 'clue', x: c * CELL + CELL / 2, y: r * CELL + CELL / 2 + 1,
+        }, layer.clues).textContent = value;
+      }
+    }
+
+    // ---------- Subcell polygon for region fill ----------
+    // For a 'full' subcell, the polygon is the cell square.
+    // For 'big'/'small', we approximate the arc with a polyline of N points.
+    function subcellPath(sub) {
+      if (sub.kind === 'full') {
+        const x = sub.c * CELL, y = sub.r * CELL;
+        return `M ${x} ${y} h ${CELL} v ${CELL} h ${-CELL} z`;
+      }
+      // arc'd subcell: build a closed path along cell edges (where sides are open)
+      // and the arc between the two arc endpoints.
+      const corner = sub.corner;
+      const cx = sub.c + (corner.endsWith('r') ? 1 : 0);
+      const cy = sub.r + (corner.startsWith('b') ? 1 : 0);
+      const horizEnd = { x: cx + (corner.endsWith('r') ? -1 : 1), y: cy };
+      const vertEnd  = { x: cx, y: cy + (corner.startsWith('b') ? -1 : 1) };
+      // BIG piece: corners are center, horizEnd, [arc], vertEnd → back to center.
+      // SMALL piece: corners are diag-corner, horizEnd, [arc], vertEnd → back.
+      // The arc travels from horizEnd → vertEnd along the quarter circle.
+      // For BIG, the arc bulges AWAY from the center; sweep direction matters.
+      const cellX = sub.c * CELL, cellY = sub.r * CELL;
+      const px = (lx, ly) => `${cellX + lx * CELL} ${cellY + ly * CELL}`;
+      // Use SVG arc command. For both pieces the arc connects horizEnd and vertEnd
+      // along the same quarter circle of radius 1. Sweep flag picks which side.
+      // The arc visually encloses the BIG piece on the center side.
+      // sweep=0 means the arc goes counterclockwise from horizEnd to vertEnd
+      // (center on the left of the direction of travel).
+      // Actually we need to check empirically; we'll try both and pick the right one.
+      // For SVG, sweep-flag=1 means clockwise.
+      const cellLocalCenter = { lx: corner.endsWith('r') ? 1 : 0, ly: corner.startsWith('b') ? 1 : 0 };
+      const cellLocalHoriz = { lx: corner.endsWith('r') ? 0 : 1, ly: cellLocalCenter.ly };
+      const cellLocalVert = { lx: cellLocalCenter.lx, ly: corner.startsWith('b') ? 0 : 1 };
+      const cellLocalDiag = { lx: cellLocalHoriz.lx, ly: cellLocalVert.ly };
+      // Sweep from horiz to vert: looking at the cell, the arc is part of a circle
+      // centered at cellLocalCenter. Going horiz → vert around that center is one
+      // direction; sweep flag 0 vs 1 in SVG Path.
+      // Empirically for tl-corner (center at (0,0)): horiz=(1,0), vert=(0,1).
+      // The quarter arc with radius CELL goes from (CELL,0) to (0,CELL) bulging
+      // away from origin (through (CELL/√2, CELL/√2)). In SVG that's sweep=0
+      // (counterclockwise as seen on screen with y-down). Let's verify by trial.
+      // We'll pick sweep based on which corner.
+      const sweep = (corner === 'tl' || corner === 'br') ? 1 : 0;
+
+      if (sub.kind === 'big') {
+        return `M ${px(cellLocalCenter.lx, cellLocalCenter.ly)} ` +
+               `L ${px(cellLocalHoriz.lx, cellLocalHoriz.ly)} ` +
+               `A ${CELL} ${CELL} 0 0 ${sweep} ${px(cellLocalVert.lx, cellLocalVert.ly)} ` +
+               `Z`;
+      } else {
+        return `M ${px(cellLocalDiag.lx, cellLocalDiag.ly)} ` +
+               `L ${px(cellLocalVert.lx, cellLocalVert.ly)} ` +
+               `A ${CELL} ${CELL} 0 0 ${1 - sweep} ${px(cellLocalHoriz.lx, cellLocalHoriz.ly)} ` +
+               `Z`;
+      }
+    }
+
+    function arcPath(r, c, corner) {
+      const cellX = c * CELL, cellY = r * CELL;
+      const cx = cellX + (corner.endsWith('r') ? CELL : 0);
+      const cy = cellY + (corner.startsWith('b') ? CELL : 0);
+      const horizEnd = {
+        x: cx + (corner.endsWith('r') ? -CELL : CELL),
+        y: cy,
+      };
+      const vertEnd = {
+        x: cx,
+        y: cy + (corner.startsWith('b') ? -CELL : CELL),
+      };
+      const sweep = (corner === 'tl' || corner === 'br') ? 1 : 0;
+      return `M ${horizEnd.x} ${horizEnd.y} A ${CELL} ${CELL} 0 0 ${sweep} ${vertEnd.x} ${vertEnd.y}`;
+    }
+
+    // ---------- Debug overlay ----------
+    function segPathDebug(seg) {
+      const sx = seg.a.x * CELL, sy = seg.a.y * CELL;
+      const ex = seg.b.x * CELL, ey = seg.b.y * CELL;
+      if (seg.kind === 'edge') return `M ${sx} ${sy} L ${ex} ${ey}`;
+      // Quarter-arc: SVG arc command. We don't know the sweep flag a priori;
+      // try sweep=0 first. The center is at seg.center (in cell units).
+      // For a unit-radius arc we just use both axes = CELL. Sweep flag we
+      // determine by computing whether (mid - center) points toward the
+      // bulge (away from center), which it does by definition. We pick the
+      // sweep that places the chord midpoint on the far side of center.
+      // Empirical: for our arcs, sweep=0 works in some orientations and
+      // sweep=1 in others; pick by sign of cross product of (a-center) and (b-a).
+      const ca = { x: seg.a.x - seg.center.x, y: seg.a.y - seg.center.y };
+      const ab = { x: seg.b.x - seg.a.x, y: seg.b.y - seg.a.y };
+      const cross = ca.x * ab.y - ca.y * ab.x;
+      const sweep = cross < 0 ? 1 : 0;
+      return `M ${sx} ${sy} A ${CELL} ${CELL} 0 0 ${sweep} ${ex} ${ey}`;
+    }
+
+    function renderDebugOverlay() {
+      while (layer.debug.firstChild) layer.debug.removeChild(layer.debug.firstChild);
+      const info = document.getElementById('debug-info');
+      info.innerHTML = '';
+      const targetCell = pinnedCell || hoveredCell;
+      info.classList.toggle('visible', debugMode && !!targetCell);
+      if (!debugMode || !targetCell || !lastData) return;
+      const region = ownerCellRegion(targetCell.r, targetCell.c, lastData);
+      if (!region) return;
+      const walk = regionBoundaryWalk(region, lastData);
+
+      // Highlight every boundary segment
+      for (const cycle of walk.cycles) {
+        for (const j of cycle) {
+          el('path', {
+            class: 'debug-seg' + (j.isKink ? ' kink-end' : ''),
+            d: segPathDebug(j.seg),
+          }, layer.debug);
+        }
+      }
+      // Mark each junction: red dot for kink, green dot for smooth
+      for (const cycle of walk.cycles) {
+        for (const j of cycle) {
+          el('circle', {
+            class: j.isKink ? 'debug-kink' : 'debug-smooth',
+            cx: j.point.x * CELL, cy: j.point.y * CELL, r: 4,
+          }, layer.debug);
+        }
+      }
+
+      // Side panel info
+      const intArea = isIntegerArea(region);
+      const area = intArea ? regionIntegerArea(region) : regionArea(region);
+      const score = regionScore(region, lastData);
+      const summary = document.createElement('div');
+      summary.className = 'summary';
+      const pinTag = pinnedCell ? ' [pinned — click region to unpin]' : ' [click a cell to pin]';
+      summary.textContent = `Region #${region.index}  ·  area ${intArea ? area : area.toFixed(3)}  ·  ${walk.smoothPieces} smooth (${walk.kinks} kinks across ${walk.cycles.length} cycle${walk.cycles.length === 1 ? '' : 's'})  ·  score ${score == null ? '—' : score}${pinTag}`;
+      info.appendChild(summary);
+      walk.cycles.forEach((cycle, ci) => {
+        const cycleHeader = document.createElement('div');
+        cycleHeader.className = 'row';
+        cycleHeader.style.color = '#666';
+        cycleHeader.textContent = `cycle ${ci + 1}/${walk.cycles.length} (${cycle.length} segments):`;
+        info.appendChild(cycleHeader);
+        for (const j of cycle) {
+          const row = document.createElement('div');
+          row.className = 'row ' + (j.isKink ? 'kink' : 'smooth');
+          const segDesc = j.seg.kind === 'arc' ? 'arc' : 'edge';
+          row.textContent = `  ${segDesc} → (${j.point.x},${j.point.y}) ${j.isKink ? 'KINK' : 'smooth'}`;
+          info.appendChild(row);
+        }
+      });
+    }
+
+    // ---------- Live render ----------
+    function rebuild() {
+      // Clear dynamic layers
+      ['regionFill', 'arcs', 'clueBorders', 'cluesGreenBg'].forEach(k => {
+        while (layer[k].firstChild) layer[k].removeChild(layer[k].firstChild);
+      });
+
+      const data = computeRegions({ size: N, arcs });
+      const dangling = new Set(danglingArcs(data, arcs).map(d => `${d.r},${d.c}`));
+      const cluesValidated = validateClues(data, PUZZLE.clues);
+
+      // Region fills (one polygon per subcell, colored by region)
+      for (let i = 0; i < data.subs.length; i++) {
+        const sub = data.subs[i];
+        const regionIdx = data.regionOf[i];
+        const color = PALETTE[regionIdx % PALETTE.length];
+        // Skip filling green cells (keep their green look)
+        if (isGreen(sub.r, sub.c)) continue;
+        el('path', { d: subcellPath(sub), fill: color, stroke: 'none', opacity: 0.7 }, layer.regionFill);
+      }
+
+      // Arcs
+      for (const [k, corner] of arcs) {
+        const [r, c] = k.split(',').map(Number);
+        el('path', {
+          class: `arc${dangling.has(k) ? ' dangling' : ''}`,
+          d: arcPath(r, c, corner),
+        }, layer.arcs);
+      }
+
+      // Clue cell borders
+      for (const cl of cluesValidated) {
+        el('rect', {
+          class: `clue-border-overlay ${cl.status}`,
+          x: cl.c * CELL + 2, y: cl.r * CELL + 2,
+          width: CELL - 4, height: CELL - 4,
+        }, layer.clueBorders);
+      }
+
+      // Update region info panel + cell labels + answer
+      renderRegionList(data);
+      renderCellLabels(data);
+      renderAnswer(data, dangling.size > 0, cluesValidated);
+      renderClueHints();
+      renderReachability();
+      lastData = data;
+      renderDebugOverlay();
+      saveArcs();
+    }
+
+    function renderRegionList(data) {
+      const host = document.getElementById('regions');
+      host.innerHTML = '';
+      // Sort regions by descending area for readability
+      const regions = data.regions.slice().sort((a, b) => regionArea(b) - regionArea(a));
+      for (const region of regions) {
+        const intArea = isIntegerArea(region);
+        const area = intArea ? regionIntegerArea(region) : regionArea(region);
+        const score = regionScore(region, data);
+        const sm = intArea ? smoothPieceCount(region, data) : null;
+        const div = document.createElement('div');
+        div.className = 'region-row' + (intArea ? '' : ' pending');
+        const color = PALETTE[region.index % PALETTE.length];
+        div.innerHTML = `
+          <span class="swatch" style="background:${color}"></span>
+          <span>
+            #${region.index} <span class="meta">·
+              area ${intArea ? area : area.toFixed(3)},
+              ${intArea ? `${sm} smooth` : 'non-integer area'}
+            </span>
+          </span>
+          <strong>${score == null ? '—' : score}</strong>`;
+        host.appendChild(div);
+      }
+    }
+
+    function cellOwnerScore(r, c, data) {
+      const region = ownerCellRegion(r, c, data);
+      if (!region) return null;
+      return regionScore(region, data);
+    }
+
+    function renderCellLabels(data) {
+      const host = document.getElementById('cell-labels');
+      host.innerHTML = '';
+      // header: blank + col headers (1-9)? Skip headers; just data + sums.
+      const colSums = new Array(N).fill(null).map(() => ({ sum: 0, ok: true }));
+      const rowSums = new Array(N).fill(null).map(() => ({ sum: 0, ok: true }));
+      const labels = [];
+      for (let r = 0; r < N; r++) {
+        labels[r] = [];
+        for (let c = 0; c < N; c++) {
+          const score = cellOwnerScore(r, c, data);
+          labels[r][c] = score;
+          if (score == null) { rowSums[r].ok = false; colSums[c].ok = false; }
+          else { rowSums[r].sum += score; colSums[c].sum += score; }
+        }
+      }
+      // Render row by row
+      for (let r = 0; r < N; r++) {
+        for (let c = 0; c < N; c++) {
+          const v = labels[r][c];
+          const div = document.createElement('div');
+          div.className = 'lc' + (isGreen(r, c) ? ' green' : '') + (v == null ? ' empty' : '');
+          div.textContent = v == null ? '—' : v;
+          host.appendChild(div);
+        }
+        // row sum
+        const div = document.createElement('div');
+        div.className = 'lc sum';
+        div.textContent = rowSums[r].ok ? rowSums[r].sum : '—';
+        host.appendChild(div);
+      }
+      // Last row: column sums + total cell
+      // (We have 9 rows of data; 10th row optional for col sums)
+      // Insert col sum row by appending a 10-cell row
+      // We've already filled 9 rows × 10 cells = 90 cells; add 10 more for col sums:
+      for (let c = 0; c < N; c++) {
+        const div = document.createElement('div');
+        div.className = 'lc sum';
+        div.textContent = colSums[c].ok ? colSums[c].sum : '—';
+        host.appendChild(div);
+      }
+      const corner = document.createElement('div');
+      corner.className = 'lc sum';
+      corner.textContent = '';
+      host.appendChild(corner);
+
+      // Stash for the answer block
+      data._rowSums = rowSums;
+      data._colSums = colSums;
+    }
+
+    function renderAnswer(data, hasDangling, cluesValidated) {
+      const host = document.getElementById('answer');
+      const allInt = data.regions.every(isIntegerArea);
+      const allCluesMatch = cluesValidated.every(c => c.status === 'match');
+      const mismatchCount = cluesValidated.filter(c => c.status === 'mismatch').length;
+      const pendingCount = cluesValidated.filter(c => c.status === 'pending').length;
+      if (!allInt || hasDangling || !allCluesMatch) {
+        host.className = 'answer unsolved';
+        if (hasDangling) host.textContent = 'Answer pending… dangling arc detected.';
+        else if (!allInt) host.textContent = 'Answer pending… some region area is not yet integer.';
+        else host.textContent = `Answer pending… ${mismatchCount} mismatched clue${mismatchCount === 1 ? '' : 's'}` +
+          (pendingCount ? `, ${pendingCount} pending.` : '.');
+        return;
+      }
+      const rowSums = data._rowSums.map(x => x.sum);
+      const colSums = data._colSums.map(x => x.sum);
+      const { display } = PUZZLE.scoreFn(rowSums, colSums);
+      host.className = 'answer';
+      host.textContent = display;
+    }
+
+    // ---------- Interaction ----------
+    function cornerAtPoint(r, c, x, y) {
+      const lx = x - c * CELL, ly = y - r * CELL;
+      const top = ly < CELL / 2;
+      const left = lx < CELL / 2;
+      return (top ? 't' : 'b') + (left ? 'l' : 'r');
+    }
+
+    function eventToCell(ev) {
+      const rect = svg.getBoundingClientRect();
+      const x = (ev.clientX - rect.left) * (GRID_PX / rect.width);
+      const y = (ev.clientY - rect.top) * (GRID_PX / rect.height);
+      const c = Math.floor(x / CELL);
+      const r = Math.floor(y / CELL);
+      if (r < 0 || r >= N || c < 0 || c >= N) return null;
+      return { r, c, x, y };
+    }
+
+    svg.addEventListener('mousemove', ev => {
+      const hit = eventToCell(ev);
+      svg.classList.toggle('over-green', hit && isGreen(hit.r, hit.c));
+      const newHover = hit ? { r: hit.r, c: hit.c } : null;
+      const changed = !hoveredCell || !newHover ||
+        hoveredCell.r !== newHover.r || hoveredCell.c !== newHover.c;
+      hoveredCell = newHover;
+      if (changed && debugMode) renderDebugOverlay();
+    });
+
+    svg.addEventListener('mouseleave', () => {
+      while (layer.corners.firstChild) layer.corners.removeChild(layer.corners.firstChild);
+      hoveredCell = null;
+      if (debugMode) renderDebugOverlay();
+    });
+
+    const ARC_CYCLE = ['tl', 'tr', 'br', 'bl'];
+
+    svg.addEventListener('click', ev => {
+      const hit = eventToCell(ev);
+      if (!hit) return;
+      if (debugMode) {
+        // In debug mode, clicking pins/unpins the region under the cursor.
+        if (pinnedCell && pinnedCell.r === hit.r && pinnedCell.c === hit.c) {
+          pinnedCell = null;
+        } else {
+          pinnedCell = { r: hit.r, c: hit.c };
+        }
+        renderDebugOverlay();
+        return;
+      }
+      if (isGreen(hit.r, hit.c)) return;
+      const key = arcKey(hit.r, hit.c);
+      const current = arcs.get(key);
+      if (current === undefined) {
+        arcs.set(key, ARC_CYCLE[0]);
+      } else {
+        const i = ARC_CYCLE.indexOf(current);
+        if (i === ARC_CYCLE.length - 1) arcs.delete(key);
+        else arcs.set(key, ARC_CYCLE[i + 1]);
+      }
+      rebuild();
+    });
+
+    svg.addEventListener('contextmenu', ev => {
+      ev.preventDefault();
+      const hit = eventToCell(ev);
+      if (!hit) return;
+      arcs.delete(arcKey(hit.r, hit.c));
+      rebuild();
+    });
+
+    document.getElementById('btn-clear').addEventListener('click', () => {
+      arcs.clear();
+      rebuild();
+    });
+
+    document.getElementById('btn-debug').addEventListener('change', ev => {
+      debugMode = ev.target.checked;
+      if (!debugMode) pinnedCell = null;
+      renderDebugOverlay();
+    });
+
+    document.getElementById('btn-save').addEventListener('click', () => {
+      saveArcs();
+      const btn = document.getElementById('btn-save');
+      const orig = btn.textContent;
+      btn.textContent = 'Saved ✓';
+      setTimeout(() => { btn.textContent = orig; }, 1200);
+    });
+
+    document.getElementById('btn-copy').addEventListener('click', async () => {
+      const entries = Array.from(arcs.entries()).sort();
+      const text = JSON.stringify(entries);
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch {
+        // fallback: use textarea selection
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch {}
+        document.body.removeChild(ta);
+      }
+      const btn = document.getElementById('btn-copy');
+      const orig = btn.textContent;
+      btn.textContent = `Copied (${entries.length} arcs)`;
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    });
+
+    // ---------- Clue factorization hints ----------
+    function factorizationsOf(n) {
+      const out = [];
+      for (let area = 1; area * area <= n; area++) {
+        if (n % area === 0) {
+          const smooth = n / area;
+          out.push({ area, smooth });
+          if (smooth !== area) out.push({ area: smooth, smooth: area });
+        }
+      }
+      return out.sort((a, b) => a.area - b.area);
+    }
+
+    // Heuristic: a factorization is "practical" if area >= 1 and smooth >= 3
+    // (a region needs at least 3 kinks because pure circles aren't possible
+    // with quarter-arcs) and area <= N*N (grid limit).
+    function isPracticalFactorization(f) {
+      return f.smooth >= 3 && f.area >= 1 && f.area <= N * N;
+    }
+
+    function renderClueHints() {
+      const host = document.getElementById('clue-hints');
+      if (!host) return;
+      host.innerHTML = '';
+      const sorted = [...PUZZLE.clues].sort((a, b) => a.value - b.value);
+      for (const cl of sorted) {
+        const factorizations = factorizationsOf(cl.value);
+        const row = document.createElement('div');
+        row.className = 'clue-row';
+        const left = document.createElement('strong');
+        left.textContent = `${cl.value} @(${cl.r},${cl.c})`;
+        const right = document.createElement('span');
+        right.className = 'factor-list';
+        for (const f of factorizations) {
+          const label = `${f.area}×${f.smooth}`;
+          const span = document.createElement('span');
+          if (isPracticalFactorization(f)) {
+            span.className = 'practical';
+            if (reachHint && reachHint.clue.r === cl.r && reachHint.clue.c === cl.c &&
+                reachHint.area === f.area && reachHint.smooth === f.smooth) {
+              span.classList.add('active');
+            }
+            span.addEventListener('click', () => {
+              if (reachHint && reachHint.clue.r === cl.r && reachHint.clue.c === cl.c &&
+                  reachHint.area === f.area && reachHint.smooth === f.smooth) {
+                reachHint = null;
+              } else {
+                reachHint = { clue: cl, area: f.area, smooth: f.smooth };
+              }
+              renderClueHints();
+              renderReachability();
+            });
+          } else {
+            span.className = 'impractical';
+          }
+          span.textContent = label;
+          right.appendChild(span);
+          right.appendChild(document.createTextNode(' '));
+        }
+        row.appendChild(left);
+        row.appendChild(right);
+        host.appendChild(row);
+      }
+    }
+
+    // BFS reachability from a clue cell, treating green and white cells uniformly,
+    // up to depth = area-1 (a region of `area` cells could chain at most that far).
+    function reachableCells(startR, startC, maxDepth) {
+      const seen = new Map();
+      seen.set(`${startR},${startC}`, 0);
+      const queue = [[startR, startC, 0]];
+      while (queue.length) {
+        const [r, c, d] = queue.shift();
+        if (d >= maxDepth) continue;
+        for (const [dr, dc] of [[-1,0],[1,0],[0,-1],[0,1]]) {
+          const nr = r + dr, nc = c + dc;
+          if (nr < 0 || nr >= N || nc < 0 || nc >= N) continue;
+          const k = `${nr},${nc}`;
+          if (seen.has(k)) continue;
+          seen.set(k, d + 1);
+          queue.push([nr, nc, d + 1]);
+        }
+      }
+      return seen;
+    }
+
+    function renderReachability() {
+      while (layer.reach.firstChild) layer.reach.removeChild(layer.reach.firstChild);
+      if (!reachHint) return;
+      const { clue, area } = reachHint;
+      const cells = reachableCells(clue.r, clue.c, area - 1);
+      // Highlight reachable cells
+      for (const k of cells.keys()) {
+        const [r, c] = k.split(',').map(Number);
+        if (r === clue.r && c === clue.c) continue;
+        el('rect', {
+          class: 'reach-cell',
+          x: c * CELL + 2, y: r * CELL + 2,
+          width: CELL - 4, height: CELL - 4,
+        }, layer.reach);
+      }
+      // Outline the clue cell
+      el('rect', {
+        class: 'reach-clue',
+        x: clue.c * CELL + 1, y: clue.r * CELL + 1,
+        width: CELL - 2, height: CELL - 2,
+      }, layer.reach);
+    }
+
+    // Boot
+    loadArcs();
+    renderStatic();
+    rebuild();
+  </script>
+</body>
+</html>
