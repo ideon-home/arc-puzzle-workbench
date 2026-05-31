@@ -1,0 +1,32 @@
+{
+  "name": "arc-puzzle-workbench",
+  "version": "1.0.0",
+  "description": "A small, dependency-free browser tool for solving \"quarter-arc\" puzzles — place quarter-circle arcs to carve a grid into regions whose area × smooth-boundary-pieces matches each clue.",
+  "type": "module",
+  "main": "engine.js",
+  "scripts": {
+    "test": "node --test",
+    "start": "./serve.sh"
+  },
+  "keywords": [
+    "puzzle",
+    "arc",
+    "grid",
+    "jane-street",
+    "esm",
+    "browser"
+  ],
+  "author": "ideon-home",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ideon-home/arc-puzzle-workbench.git"
+  },
+  "files": [
+    "engine.js",
+    "puzzle.js",
+    "puzzle-random.js",
+    "index.html",
+    "serve.sh"
+  ]
+}

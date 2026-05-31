@@ -4,6 +4,10 @@ A small, dependency-free browser tool for solving "quarter-arc" puzzles — the 
 
 It's a workbench, not a solver: you place the arcs, and the live engine tells you in real time which regions exist, what their area and score are, which clue cells match, and which arcs are still dangling. Originally built for Jane Street's _Arch Madness_ (May 2026), but the puzzle definition is data-driven, so any puzzle in this family fits in one file.
 
+> **▶ [Live demo](https://ideon-home.github.io/arc-puzzle-workbench/)** — no install needed, just open it in a browser.
+
+![Arc Puzzle Workbench in action](assets/puzzle-solving-lite.gif)
+
 ## Quick start
 
 ```bash
